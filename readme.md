@@ -36,7 +36,6 @@
        		.ConfigureAppConfiguration(
        		(hostingContext, builder) =>{
                 builder.AddApollo(builder.Build().GetSection("apollo"));
-               })
-       		.UseStartup<Startup>();
+               }).UseStartup<Startup>();
    ```
 
