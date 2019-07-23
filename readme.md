@@ -44,8 +44,7 @@ public class Program
 Program.cs类中使用代码：
 public static IWebHostBuilder CreateWebHostBuilder(string[] args)
 {
-     var host = WebHost.CreateDefaultBuilder(args)
-						.ConfigureAppConfiguration(
+     var host = WebHost.CreateDefaultBuilder(args).ConfigureAppConfiguration(
                     (hostingContext, builder) =>
                     {
                         builder.AddApollo(builder.Build().GetSection("apollo"));
@@ -65,7 +64,7 @@ Startup.cs类中启用Apollo配置组件日志功能代码（默认不启用）�
 
 ```c#
 
-	[Route("api/[controller]")]
+    [Route("api/[controller]")]
     [ApiController]
     public class ValuesController : ControllerBase
     {
