@@ -1,13 +1,14 @@
 ﻿using System;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Coder.Apollo.Sdk
 {
-    /// <summary>
-    ///Apollo配置拓展方法
-    /// </summary>
-    public static class ApolloConfigurationExtensions
+    public static class AspNetExtensions
     {
+        #region Apollo配置构建相关
+
         /// <summary>
         /// 构建Apollo配置
         /// </summary>
@@ -37,5 +38,16 @@ namespace Coder.Apollo.Sdk
 
             return builder.Add(new ApolloConfigurationSource(apolloOptions));
         }
+
+        #endregion Apollo配置构建相关
+
+        #region 启用Apollo配置日志功能
+
+        public static void UseApolloConfigLogger(this IApplicationBuilder app, ILogger logger)
+        {
+            ApolloConfigurationLogger.Init(logger);
+        }
+
+        #endregion 启用Apollo配置日志功能
     }
 }

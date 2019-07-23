@@ -3,7 +3,7 @@
 namespace Coder.Apollo.Sdk
 {
     /// <summary>
-    /// apollo配置数据源
+    /// Apollo配置数据源
     /// </summary>
     public class ApolloConfigurationSource : IConfigurationSource
     {

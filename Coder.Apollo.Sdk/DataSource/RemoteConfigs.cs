@@ -1,19 +1,22 @@
-﻿using Coder.Apollo.Sdk.Dto;
-using Newtonsoft.Json;
-using System;
-using System.Collections.Concurrent;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text;
+using Coder.Apollo.Sdk.Dto;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 
 namespace Coder.Apollo.Sdk.DataSource
 {
+    //Apollo 接入指南链接如下：
+    // https://github.com/ctripcorp/apollo/wiki/%E5%85%B6%E5%AE%83%E8%AF%AD%E8%A8%80%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%8E%A5%E5%85%A5%E6%8C%87%E5%8D%97
     internal sealed class RemoteConfigs
     {
-        private static readonly ConcurrentDictionary<int, HttpClient> HttpClientDictionary = new ConcurrentDictionary<int, HttpClient>();
-        private readonly int _requestTimeoutSecond;
         private readonly ApolloOptions _apolloOptions;
+        private static HttpClient _httpClient;
+        private static ILogger Logger => ApolloConfigurationLogger.Logger;
 
         #region 构造函数
 
@@ -21,19 +24,17 @@ namespace Coder.Apollo.Sdk.DataSource
         {
         }
 
-        private RemoteConfigs(ApolloOptions apolloOptions, int requestTimeoutSecond)
+        private RemoteConfigs(ApolloOptions apolloOptions)
         {
-            _requestTimeoutSecond = requestTimeoutSecond;
             _apolloOptions = apolloOptions;
-            HttpClientDictionary.TryGetValue(requestTimeoutSecond, out var httpClient);
-            if (httpClient == null)
+            if (_httpClient == null)
             {
-                httpClient = new HttpClient
+                _httpClient = new HttpClient
                 {
                     BaseAddress = new Uri(_apolloOptions.MetaServer.Trim()),
-                    Timeout = TimeSpan.FromSeconds(requestTimeoutSecond)
+                    //由于服务端会hold住请求60秒，所以请确保客户端访问服务端的超时时间要大于60秒。->摘抄自官方文档
+                    Timeout = TimeSpan.FromSeconds(65)
                 };
-                HttpClientDictionary.TryAdd(requestTimeoutSecond, httpClient);
             }
         }
 
@@ -43,11 +44,10 @@ namespace Coder.Apollo.Sdk.DataSource
         /// 获取实例
         /// </summary>
         /// <param name="apolloOptions"></param>
-        /// <param name="requestTimeoutSecond"></param>
         /// <returns></returns>
-        internal static RemoteConfigs GetInstance(ApolloOptions apolloOptions, int requestTimeoutSecond)
+        internal static RemoteConfigs GetInstance(ApolloOptions apolloOptions)
         {
-            var model = new RemoteConfigs(apolloOptions, requestTimeoutSecond);
+            var model = new RemoteConfigs(apolloOptions);
             return model;
         }
 
@@ -55,22 +55,26 @@ namespace Coder.Apollo.Sdk.DataSource
         /// 获取所有的通知对象
         /// </summary>
         /// <returns></returns>
-        internal ApolloConfigNotificationOutput GetConfigNotification()
+        internal IEnumerable<ApolloConfigNotification> GetConfigNotification()
         {
-            var result = new ApolloConfigNotificationOutput(null, true, null);
+            var sbLog = new StringBuilder("Apollo获取命名空间变更信息");
+            var result = new List<ApolloConfigNotification>();
+            var requestUrl = _apolloOptions.GetNamespaceNotificationsUrl();
+            sbLog.AppendLine($"访问地址：{requestUrl}");
             try
             {
-                var httpClient = HttpClientDictionary[_requestTimeoutSecond];
-                var response = httpClient.GetAsync(_apolloOptions.GetNotificationsUrl()).GetAwaiter().GetResult();
+                var response = _httpClient.GetAsync(requestUrl).GetAwaiter().GetResult();
                 response.EnsureSuccessStatusCode();
                 var jsonStr = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                var jsonModel = JsonConvert.DeserializeObject<ICollection<ApolloConfigNotification>>(jsonStr);
-                result.HasChanged = true;
-                result.Data = jsonModel;
+                sbLog.AppendLine($"返回结果：{jsonStr}");
+                var jsonModel = JsonConvert.DeserializeObject<List<ApolloConfigNotification>>(jsonStr);
+                result = jsonModel;
+                Logger?.LogDebug(sbLog.ToString());
             }
             catch (Exception ex)
             {
-                result.Exception = ex;
+                Logger?.LogError(ex, sbLog.ToString());
+                throw;
             }
             return result;
         }
@@ -79,43 +83,47 @@ namespace Coder.Apollo.Sdk.DataSource
         /// 获取命名空间下的所有配置
         /// </summary>
         /// <param name="namespaceNames">命名空间数组</param>
+        /// <param name="hasChangedData">是否存在变的配置</param>
         /// <returns></returns>
-        internal ApolloConfigOutput GetConfigs(ICollection<string> namespaceNames)
+        internal IEnumerable<ApolloConfig> GetConfigsByNamespaces(IEnumerable<string> namespaceNames, out bool hasChangedData)
         {
-            var result = new ApolloConfigOutput(null, true, null);
+            var sbLog = new StringBuilder("Apollo获取命名空间下的所有配置");
+            sbLog.AppendLine($"请求的命名空间集合：{string.Join(",", namespaceNames)}");
+            hasChangedData = false;
+            var result = new List<ApolloConfig>();
             try
             {
-                var models = new List<ApolloConfig>();
-                var httpClient = HttpClientDictionary[_requestTimeoutSecond];
-                var changedFlagKv = new KeyValuePair<bool, int>(false, 0);//key 表示是否已经变更，value表示是否锁定变量 0未锁定 1锁定
                 foreach (var namespaceName in namespaceNames.Select(m => m.Trim()).Distinct())
                 {
                     var oldModel = ApolloConfig.GetByNamespace(namespaceName);
                     var releaseKey = string.IsNullOrWhiteSpace(oldModel?.ReleaseKey) ? "-1" : oldModel.ReleaseKey;
-                    var urlPath = _apolloOptions.GetConfigsUrl(namespaceName, releaseKey);
-                    var response = httpClient.GetAsync(urlPath).GetAwaiter().GetResult();
+                    var requestUrl = _apolloOptions.GetConfigsByNamespacesUrl(namespaceName, releaseKey);
+                    sbLog.AppendLine($"请求{namespaceName}命名空间，访问地址：{requestUrl}");
+                    var response = _httpClient.GetAsync(requestUrl).GetAwaiter().GetResult();
                     if (response.StatusCode == HttpStatusCode.NotModified) //返回304表示服务端没有变更
                     {
-                        models.Add(oldModel);
+                        sbLog.AppendLine($"请求{namespaceName}命名空间，服务端无配置变更");
+                        result.Add(oldModel);
                     }
                     else
                     {
                         var json = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                        sbLog.AppendLine($"请求{namespaceName}命名空间，服务端配置有变更，最新配置为：{json}");
                         var newModel = JsonConvert.DeserializeObject<ApolloConfig>(json);
                         ApolloConfig.AddOrUpdate(newModel);
-                        models.Add(newModel);
-                        if (newModel.ReleaseKey != releaseKey && changedFlagKv.Value == 0)
+                        result.Add(newModel);
+                        if (newModel.ReleaseKey != releaseKey)
                         {
-                            changedFlagKv = new KeyValuePair<bool, int>(true, 1);
+                            hasChangedData = true;
                         }
                     }
-                    result.HasChanged = changedFlagKv.Key;
-                    result.Data = models.ToArray();
+                    Logger?.LogDebug(sbLog.ToString());
                 }
             }
             catch (Exception ex)
             {
-                result.Exception = ex;
+                Logger?.LogError(ex, sbLog.ToString());
+                throw;
             }
             return result;
         }

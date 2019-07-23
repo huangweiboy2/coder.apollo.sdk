@@ -19,7 +19,7 @@ namespace Coder.Apollo.Sdk.Demo
                 });
             var configuration = builder.Build();
 
-            var serviceName = configuration.GetValue<string>("app.TEST");
+            var serviceName = configuration.GetValue<string>("app.zxz");
 
             Console.WriteLine(serviceName);
 

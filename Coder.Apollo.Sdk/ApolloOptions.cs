@@ -1,11 +1,11 @@
-﻿using Coder.Apollo.Sdk.Dto;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Serialization;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using Coder.Apollo.Sdk.Dto;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace Coder.Apollo.Sdk
 {
@@ -42,7 +42,7 @@ namespace Coder.Apollo.Sdk
         /// 获取通知的Url地址
         /// </summary>
         /// <returns></returns>
-        internal string GetNotificationsUrl()
+        internal string GetNamespaceNotificationsUrl()
         {
             Validate();
             var namespaces = Namespaces.Distinct().OrderBy(m => m).ToArray();
@@ -67,7 +67,7 @@ namespace Coder.Apollo.Sdk
         ///  <param name="namespaceName"></param>
         ///  <param name="releaseKey"></param>
         ///  <returns></returns>
-        internal string GetConfigsUrl(string namespaceName, string releaseKey)
+        internal string GetConfigsByNamespacesUrl(string namespaceName, string releaseKey)
         {
             Validate();
             var url = $"{MetaServer}/configs/{AppId}/{Cluster}/{namespaceName}?releaseKey={releaseKey.Trim()}&ip={DeployIp}";
